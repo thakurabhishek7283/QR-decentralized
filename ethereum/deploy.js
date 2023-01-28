@@ -1,4 +1,3 @@
-
 // conntract address new - 0xeDd10Bf29f51b95A42dA4a8EEB8D2b7203099E48
 
 const HDWalletProvider = require("@truffle/hdwallet-provider");
@@ -15,11 +14,11 @@ let provider = new HDWalletProvider({
     phrase: mnemonicPhrase,
   },
   providerOrUrl:
-    "wss://rinkeby.infura.io/ws/v3/533d1c833623412aa54f7dab02aefc89",
+    "wss://2Kg3XO3YdZBgde1ZM5o9Qm3pHud:ab321cecb64147decf5c15367e4f9602@filecoin.infura.io",
 });
 
 const web3 = new Web3(provider);
- 
+
 const deploy = async () => {
   const accounts = await new web3.eth.getAccounts();
   console.log("Attempting to deploy contract from ", accounts[0]);
