@@ -1,0 +1,876 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sigil – verify a product, and the verifier</title>
+<meta name="description" content="Signed QR credentials, copy-detection vision, and a transparency log you can check in your own browser.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M16 6l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V9z' fill='none' stroke='white' stroke-width='2.2' stroke-linejoin='round'/%3E%3Cpath d='M12.5 15.5l2.6 2.6 4.6-5' fill='none' stroke='white' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --surface-2: #f0f2f6;
+  --text: #151a24;
+  --muted: #566074;
+  --border: #dde1e9;
+  --accent: #4338ca;
+  --accent-hover: #3730a3;
+  --accent-fg: #ffffff;
+  --focus: #4f46e5;
+  --genuine: #0b7a42;
+  --genuine-bg: #e4f5ec;
+  --counterfeit: #bd2335;
+  --counterfeit-bg: #fcebed;
+  --suspicious: #96590a;
+  --suspicious-bg: #fdf1d8;
+  --recapture: #1b62a8;
+  --recapture-bg: #e5f0fa;
+  --neutral-bg: #eceff4;
+  --shadow: 0 1px 2px rgb(16 24 40 / 6%), 0 1px 3px rgb(16 24 40 / 8%);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f131b;
+    --surface: #171c27;
+    --surface-2: #1f2633;
+    --text: #e8ebf2;
+    --muted: #9aa5ba;
+    --border: #2b3445;
+    --accent: #8b85ff;
+    --accent-hover: #a29dff;
+    --accent-fg: #0f131b;
+    --focus: #a29dff;
+    --genuine: #4ccf8a;
+    --genuine-bg: #12281d;
+    --counterfeit: #ff7b8a;
+    --counterfeit-bg: #321820;
+    --suspicious: #f2b24f;
+    --suspicious-bg: #2e2412;
+    --recapture: #72b4f2;
+    --recapture-bg: #132436;
+    --neutral-bg: #232b3a;
+    --shadow: 0 1px 2px rgb(0 0 0 / 40%);
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+}
+h1, h2, h3, p { margin: 0; }
+button, select, input { font: inherit; color: inherit; }
+code, pre, .mono { font-family: var(--mono); font-size: 0.86em; }
+:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; border-radius: 6px; }
+[hidden] { display: none !important; }
+
+.page { max-width: 1180px; margin: 0 auto; padding: 0 16px 48px; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px; padding: 22px 0 18px; }
+.brand { display: flex; align-items: center; gap: 10px; font-size: 22px; font-weight: 700; letter-spacing: -0.02em; }
+.brand svg { width: 32px; height: 32px; }
+.tagline { color: var(--muted); flex: 1 1 280px; }
+.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px;
+  border: 1px solid var(--border); border-radius: 999px; background: var(--surface);
+  color: var(--muted); font-size: 12.5px; white-space: nowrap;
+}
+.pill b { color: var(--text); font-weight: 600; }
+
+/* layout */
+.layout { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); align-items: start; }
+@media (min-width: 1000px) { .layout { grid-template-columns: minmax(0, 1fr) 380px; } }
+.flow, .side { display: grid; gap: 16px; min-width: 0; }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px; box-shadow: var(--shadow); min-width: 0;
+}
+.card > h2 { font-size: 17px; font-weight: 650; display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.step-no {
+  display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%;
+  background: var(--accent); color: var(--accent-fg); font-size: 13px; font-weight: 700; flex: none;
+}
+.lede { color: var(--muted); margin-bottom: 14px; }
+.sub { font-size: 12.5px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 18px 0 8px; }
+
+/* form controls */
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field > span { font-size: 12.5px; color: var(--muted); font-weight: 600; }
+.field.grow { flex: 1 1 280px; }
+.field.grow select { width: 100%; }
+select { max-width: 100%; }
+select, input[type="text"], input[type="number"], input[type="password"] {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; min-height: 38px; min-width: 0;
+}
+button.btn, label.btn {
+  position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer;
+  min-height: 40px; padding: 8px 16px; border-radius: 9px; border: 1px solid var(--border);
+  background: var(--surface); font-weight: 600; user-select: none;
+}
+button.btn:hover, label.btn:hover { background: var(--surface-2); }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+button.small { min-height: 32px; padding: 4px 12px; font-size: 13.5px; }
+button:disabled, label.disabled { opacity: 0.55; cursor: progress; }
+input[type="file"] { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+label.btn:has(input:focus-visible) { outline: 3px solid var(--focus); outline-offset: 2px; }
+details > summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+details.form { margin-top: 12px; padding: 12px 14px; background: var(--surface-2); border-radius: 10px; }
+details.form .row { margin-top: 10px; }
+
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+legend { font-size: 12.5px; color: var(--muted); font-weight: 600; padding: 0; margin-bottom: 6px; }
+.options { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); }
+.option { position: relative; }
+.option input { position: absolute; opacity: 0; inset: 0; cursor: pointer; margin: 0; }
+.option span {
+  display: block; height: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+}
+.option span b { display: block; }
+.option span small { color: var(--muted); }
+.option input:checked + span { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; background: var(--surface-2); }
+.option input:focus-visible + span { outline: 3px solid var(--focus); outline-offset: 2px; }
+
+/* serial chips and label */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+.chip {
+  font-family: var(--mono); font-size: 12.5px; padding: 4px 9px; border-radius: 7px; cursor: pointer;
+  border: 1px solid var(--border); background: var(--surface);
+}
+.chip:hover { background: var(--surface-2); }
+.chip[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.label-view { display: grid; gap: 14px; margin-top: 14px; grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 680px) { .label-view { grid-template-columns: minmax(0, 420px) minmax(0, 1fr); } }
+.figure { margin: 0; display: grid; gap: 6px; }
+.figure img { width: 100%; height: auto; border-radius: 8px; border: 1px solid var(--border); background: #fff; }
+.figure figcaption { font-size: 12.5px; color: var(--muted); }
+.photo img { max-height: 340px; object-fit: contain; background: #000; }
+.facts { display: grid; gap: 4px 12px; grid-template-columns: max-content minmax(0, 1fr); margin: 0; align-content: start; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+
+/* verdict */
+[data-verdict] { --v: var(--muted); --v-bg: var(--neutral-bg); }
+[data-verdict="GENUINE"] { --v: var(--genuine); --v-bg: var(--genuine-bg); }
+[data-verdict="COUNTERFEIT"] { --v: var(--counterfeit); --v-bg: var(--counterfeit-bg); }
+[data-verdict="SUSPICIOUS"] { --v: var(--suspicious); --v-bg: var(--suspicious-bg); }
+[data-verdict="RECAPTURE"] { --v: var(--recapture); --v-bg: var(--recapture-bg); }
+.verdict { border: 1px solid var(--v); background: var(--v-bg); border-radius: 12px; padding: 16px 18px; }
+.verdict .word { font-size: 26px; font-weight: 750; letter-spacing: 0.01em; color: var(--v); line-height: 1.15; }
+.verdict .explain { margin-top: 4px; }
+.verdict .meta { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 10px; color: var(--muted); font-size: 13.5px; }
+.meter { height: 8px; background: color-mix(in srgb, var(--v) 18%, transparent); border-radius: 99px; overflow: hidden; width: 140px; display: inline-block; vertical-align: middle; margin-left: 6px; }
+.meter > i { display: block; height: 100%; background: var(--v); }
+.tag {
+  display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; letter-spacing: 0.03em;
+  background: var(--neutral-bg); color: var(--muted); white-space: nowrap;
+}
+.tag[data-verdict] { background: var(--v-bg); color: var(--v); }
+.tag.pass { background: var(--genuine-bg); color: var(--genuine); }
+.tag.fail { background: var(--counterfeit-bg); color: var(--counterfeit); }
+
+/* tables */
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: left; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+th, td { padding: 7px 10px 7px 0; border-bottom: 1px solid var(--border); vertical-align: top; }
+td.id { font-family: var(--mono); font-size: 12.5px; white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td details summary { color: var(--muted); font-weight: 500; font-size: 12.5px; }
+pre {
+  margin: 6px 0 0; padding: 10px; background: var(--surface-2); border-radius: 8px; overflow: auto; max-height: 240px;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.timings { display: grid; gap: 6px; }
+.timing { display: grid; grid-template-columns: 62px minmax(0, 1fr) 64px; gap: 8px; align-items: center; font-size: 13px; }
+.timing .bar { height: 8px; border-radius: 99px; background: var(--neutral-bg); overflow: hidden; }
+.timing .bar i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.timing .ms { text-align: right; font-family: var(--mono); color: var(--muted); }
+
+/* log panel */
+.hash { font-family: var(--mono); font-size: 12px; overflow-wrap: anywhere; color: var(--muted); }
+.proof { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 4px; font-size: 12.5px; }
+.proof li { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; }
+.proof li span:first-child { color: var(--muted); }
+.result-line { margin-top: 10px; font-weight: 600; }
+.result-line.ok { color: var(--genuine); }
+.result-line.bad { color: var(--counterfeit); }
+.check { display: flex; gap: 8px; align-items: center; margin-top: 8px; font-size: 13.5px; color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); }
+.stack { display: grid; gap: 10px; }
+
+/* toasts */
+.toasts { position: fixed; left: 16px; right: 16px; bottom: 16px; display: grid; gap: 8px; justify-items: center; z-index: 10; pointer-events: none; }
+.toast {
+  pointer-events: auto; max-width: 560px; padding: 10px 14px; border-radius: 10px; background: var(--text); color: var(--bg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 25%); font-weight: 500;
+}
+.toast.error { background: var(--counterfeit); color: #fff; }
+
+footer { margin-top: 28px; color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+footer a { color: var(--accent); }
+.empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="top">
+    <h1 class="brand">
+      <svg viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#4f46e5"/><path d="M16 6l8 3v6c0 5-3.4 8.6-8 11-4.6-2.4-8-6-8-11V9z" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"/><path d="M12.5 15.5l2.6 2.6 4.6-5" fill="none" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      Sigil
+    </h1>
+    <p class="tagline">Check that a product is genuine &mdash; and check the checker. Every label is signed, publicly logged, and carries a pattern a photocopier cannot reproduce.</p>
+    <div class="pills" id="status" aria-label="Server status"></div>
+  </header>
+
+  <main class="layout">
+    <div class="flow">
+      <!-- 1 -->
+      <section class="card" aria-labelledby="h-label">
+        <h2 id="h-label"><span class="step-no">1</span>Pick a label</h2>
+        <p class="lede">Labels come from a batch the manufacturer issued. Each carries a unique signed credential.</p>
+        <div class="row">
+          <label class="field grow"><span>Batch</span><select id="batch"></select></label>
+        </div>
+        <div class="chips" id="serials" role="group" aria-label="Labels in this batch"></div>
+        <div class="label-view" id="label-view" hidden>
+          <figure class="figure">
+            <img id="label-img" alt="A printed label: a QR code beside a square of fine black and white dots" width="708" height="366">
+            <figcaption>The QR code holds the signed credential. The dot pattern beside it is a secret, serial-specific copy-detection pattern.</figcaption>
+          </figure>
+          <dl class="facts" id="label-facts"></dl>
+        </div>
+        <details class="form">
+          <summary>Issue a new batch</summary>
+          <form id="issue-form" class="row" autocomplete="off">
+            <label class="field"><span>SKU</span><input type="text" id="issue-sku" value="ACME-WIDGET-PRO" maxlength="32" required></label>
+            <label class="field"><span>Units</span><input type="number" id="issue-count" value="6" min="1" max="200" required style="width: 80px"></label>
+            <label class="field"><span>Press</span>
+              <select id="issue-quality"><option value="good">good</option><option value="worn">worn (lower scores)</option></select>
+            </label>
+            <label class="field"><span>API key</span><input type="password" id="issue-key" value="dev-key" autocomplete="off" style="width: 130px"></label>
+            <button class="btn small" id="issue-btn" type="submit">Issue</button>
+          </form>
+          <p class="note" style="margin-top: 8px">Issuing signs each credential, appends it to the transparency log and samples the batch&rsquo;s print quality. It needs the server&rsquo;s API key.</p>
+        </details>
+      </section>
+
+      <!-- 2 -->
+      <section class="card" aria-labelledby="h-photo">
+        <h2 id="h-photo"><span class="step-no">2</span>Photograph it</h2>
+        <p class="lede">Nobody can hold a label up to this page, so the print-and-camera channel is simulated with the same physical model the detector is evaluated on. Pick what ends up in front of the camera.</p>
+        <fieldset>
+          <legend>What gets photographed</legend>
+          <div class="options" id="attacks">
+            <label class="option"><input type="radio" name="attack" value="" checked><span><b>The genuine label</b><small>a first-generation print</small></span></label>
+            <label class="option"><input type="radio" name="attack" value="photocopy"><span><b>A photocopy</b><small>office copier, laser reprint</small></span></label>
+            <label class="option"><input type="radio" name="attack" value="hq_reprint"><span><b>A high-quality reprint</b><small>2&times; scan, denoised, reprinted</small></span></label>
+            <label class="option"><input type="radio" name="attack" value="screen"><span><b>A screen replay</b><small>shown on a phone, re-photographed</small></span></label>
+          </div>
+        </fieldset>
+        <div class="row" style="margin-top: 14px">
+          <label class="field"><span>Shooting conditions</span>
+            <select id="difficulty"><option value="easy">easy &ndash; steady, well lit</option><option value="normal">normal</option><option value="hard">hard &ndash; shaky, dim</option></select>
+          </label>
+          <label class="field"><span>Scanning from</span>
+            <select id="place">
+              <option value="">somewhere unspecified</option>
+              <option value="19.08,72.88">Mumbai</option>
+              <option value="51.51,-0.13">London</option>
+              <option value="35.68,139.69">Tokyo</option>
+              <option value="40.71,-74.01">New York</option>
+              <option value="-33.87,151.21">Sydney</option>
+            </select>
+          </label>
+          <button class="btn primary" id="shoot" type="button" disabled>Take photo &amp; scan</button>
+          <label class="btn" id="upload-label">Upload your own photo&hellip;<input type="file" id="upload" accept="image/*"></label>
+        </div>
+        <p class="note" style="margin-top: 10px">Tip: scan one label from Mumbai, then from London a moment later. No genuine item can travel that fast, so Sigil flags a clone.</p>
+        <figure class="figure photo" id="photo-fig" hidden style="margin-top: 14px">
+          <img id="photo-img" alt="The photo that was scanned">
+          <figcaption id="photo-caption"></figcaption>
+        </figure>
+      </section>
+
+      <!-- 3 -->
+      <section class="card" id="result-card" aria-labelledby="h-result" hidden>
+        <h2 id="h-result"><span class="step-no">3</span>Verdict</h2>
+        <div id="result" aria-live="polite"></div>
+      </section>
+    </div>
+
+    <aside class="side">
+      <section class="card" aria-labelledby="h-log">
+        <h2 id="h-log">Don&rsquo;t trust the server</h2>
+        <p class="lede">Every credential is in a public append-only log (RFC 9162, as in Certificate Transparency). Your browser can check the maths itself with WebCrypto.</p>
+        <div id="sth" class="stack"><p class="empty">Loading the log&hellip;</p></div>
+        <div class="row" style="margin-top: 10px">
+          <button class="btn small" id="sth-refresh" type="button">Refresh</button>
+          <button class="btn small" id="sth-verify" type="button">Verify signature</button>
+        </div>
+        <div id="sth-result" class="result-line" role="status"></div>
+        <p class="note" style="margin-top: 6px">The log&rsquo;s public key is fetched from this same server. A real witness pins it out of band: <code>sigil audit --log-key</code>.</p>
+
+        <h3 class="sub">Inclusion of the selected label</h3>
+        <p class="note">Recomputes the leaf from the QR text, then folds the proof up to the signed root.</p>
+        <label class="check"><input type="checkbox" id="tamper"> Corrupt one hash in the proof first</label>
+        <div class="row" style="margin-top: 8px"><button class="btn small" id="incl-verify" type="button" disabled>Verify inclusion here</button></div>
+        <div id="incl" role="status"></div>
+
+        <h3 class="sub">Append-only since you last looked</h3>
+        <p class="note">Your browser remembers the last tree head it saw and asks for a consistency proof to the current one.</p>
+        <div class="row" style="margin-top: 8px"><button class="btn small" id="cons-verify" type="button">Check consistency</button></div>
+        <div id="cons" role="status"></div>
+      </section>
+
+      <section class="card">
+        <h2>How it decides</h2>
+        <div class="stack note">
+          <p><b>Deterministic first.</b> Signature, key status, log inclusion, the copy-detection score and clone analytics feed a fixed policy table. Most scans end there, in about 150&nbsp;ms.</p>
+          <p><b>Unsure means suspicious.</b> When the evidence does not settle a scan, the verdict is <code>SUSPICIOUS</code> rather than a guess, and a failed signature can never be outvoted.</p>
+          <p><b>Everything is recorded.</b> Every credential is in a public log you can audit from this page.</p>
+        </div>
+      </section>
+    </aside>
+  </main>
+
+  <footer>
+    <span>Simulated print/scan channel &mdash; see the README&rsquo;s limitations.</span>
+    <a href="/docs">API docs</a><a href="/metrics">Metrics</a><a href="/healthz">Health</a>
+  </footer>
+</div>
+<div class="toasts" id="toasts" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+/* ===================================================================================
+ * Pure functions: base45, SHA-256 and the RFC 9162 verification algorithms.
+ * Nothing here talks to the server; this is what lets a browser audit the log.
+ * =================================================================================== */
+
+const B45 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:";
+const QR_PREFIX = "SG1:";
+
+function b45decode(text) {
+  const out = [];
+  const vals = Array.from(text, (ch) => {
+    const v = B45.indexOf(ch);
+    if (v < 0) throw new Error("not base45: " + JSON.stringify(ch));
+    return v;
+  });
+  for (let i = 0; i < vals.length; i += 3) {
+    if (i + 2 < vals.length) {
+      const n = vals[i] + vals[i + 1] * 45 + vals[i + 2] * 2025;
+      if (n > 0xffff) throw new Error("base45 overflow");
+      out.push(n >> 8, n & 255);
+    } else if (i + 1 < vals.length) {
+      const n = vals[i] + vals[i + 1] * 45;
+      if (n > 255) throw new Error("base45 overflow");
+      out.push(n);
+    } else {
+      throw new Error("base45 length");
+    }
+  }
+  return Uint8Array.from(out);
+}
+
+const hexToBytes = (hex) => Uint8Array.from(hex.match(/../g) || [], (b) => parseInt(b, 16));
+const bytesToHex = (bytes) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+const b64urlToBytes = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), (c) => c.charCodeAt(0));
+const b64ToBytes = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+
+function concat(...parts) {
+  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+  let at = 0;
+  for (const p of parts) { out.set(p, at); at += p.length; }
+  return out;
+}
+
+const sameBytes = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+const sha256 = async (bytes) => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+const leafHash = (data) => sha256(concat(Uint8Array.of(0), data));
+const nodeHash = (left, right) => sha256(concat(Uint8Array.of(1), left, right));
+
+/** RFC 9162 section 2.1.3.2. Returns the list of folding steps, or null if the proof is invalid. */
+async function verifyInclusion(leaf, index, size, proof, root) {
+  if (index < 0 || index >= size) return null;
+  let fn = index, sn = size - 1, r = leaf;
+  const steps = [];
+  for (const p of proof) {
+    if (sn === 0) return null;
+    if ((fn & 1) || fn === sn) {
+      r = await nodeHash(p, r);
+      steps.push({ side: "left", sibling: p, result: r });
+      if (!(fn & 1)) {
+        while (!(fn & 1) && fn !== 0) { fn >>>= 1; sn >>>= 1; }
+      }
+    } else {
+      r = await nodeHash(r, p);
+      steps.push({ side: "right", sibling: p, result: r });
+    }
+    fn >>>= 1; sn >>>= 1;
+  }
+  return sn === 0 && sameBytes(r, root) ? steps : null;
+}
+
+/** RFC 9162 section 2.1.4.2. */
+async function verifyConsistency(m, n, rootM, rootN, proof) {
+  if (!(m >= 1 && m <= n)) return false;
+  if (m === n) return proof.length === 0 && sameBytes(rootM, rootN);
+  const path = proof.slice();
+  if ((m & (m - 1)) === 0) path.unshift(rootM);
+  if (path.length === 0) return false;
+  let fn = m - 1, sn = n - 1;
+  while (fn & 1) { fn >>>= 1; sn >>>= 1; }
+  let fr = path[0], sr = path[0];
+  for (const c of path.slice(1)) {
+    if (sn === 0) return false;
+    if ((fn & 1) || fn === sn) {
+      fr = await nodeHash(c, fr);
+      sr = await nodeHash(c, sr);
+      if (!(fn & 1)) {
+        while (!(fn & 1) && fn !== 0) { fn >>>= 1; sn >>>= 1; }
+      }
+    } else {
+      sr = await nodeHash(sr, c);
+    }
+    fn >>>= 1; sn >>>= 1;
+  }
+  return sn === 0 && sameBytes(fr, rootM) && sameBytes(sr, rootN);
+}
+
+/** The exact bytes a tree head signs: domain || size(u64) || timestamp(u64) || root. */
+function sthMessage(sth) {
+  const head = new TextEncoder().encode("sigil-sth-v1\0");
+  const nums = new DataView(new ArrayBuffer(16));
+  nums.setBigUint64(0, BigInt(sth.tree_size));
+  nums.setBigUint64(8, BigInt(sth.timestamp_ms));
+  return concat(head, new Uint8Array(nums.buffer), hexToBytes(sth.root_hash));
+}
+
+/** The QR text after the SG1: prefix, base45-decoded: exactly the bytes the log committed to. */
+function credentialBytes(payload) {
+  if (!payload.startsWith(QR_PREFIX)) throw new Error("unexpected QR text");
+  return b45decode(payload.slice(QR_PREFIX.length));
+}
+
+/** True/false, or null when this browser has no WebCrypto Ed25519. */
+async function verifySthSignature(sth, publicKey) {
+  try {
+    const key = await crypto.subtle.importKey("raw", publicKey, { name: "Ed25519" }, false, ["verify"]);
+    return await crypto.subtle.verify({ name: "Ed25519" }, key, b64ToBytes(sth.signature), sthMessage(sth));
+  } catch (err) {
+    if (err instanceof DOMException && (err.name === "NotSupportedError" || err.name === "SyntaxError")) return null;
+    throw err;
+  }
+}
+
+/* ===================================================================================
+ * DOM helpers. Text only ever goes in through text nodes, so label text read off a
+ * scanned (attacker-controlled) code can never be interpreted as markup.
+ * =================================================================================== */
+
+const $ = (id) => document.getElementById(id);
+
+function h(tag, props = {}, ...kids) {
+  const el = document.createElement(tag);
+  for (const [key, value] of Object.entries(props)) {
+    if (value == null || value === false) continue;
+    if (key === "class") el.className = value;
+    else if (key === "data") Object.assign(el.dataset, value);
+    else if (key.startsWith("on")) el.addEventListener(key.slice(2), value);
+    else el.setAttribute(key, value === true ? "" : value);
+  }
+  for (const kid of kids.flat(Infinity)) {
+    if (kid == null || kid === false) continue;
+    el.append(typeof kid === "object" ? kid : document.createTextNode(String(kid)));
+  }
+  return el;
+}
+
+const clear = (el) => { el.replaceChildren(); return el; };
+const short = (hex, n = 12) => (hex.length > 2 * n ? hex.slice(0, n) + "…" + hex.slice(-4) : hex);
+const pretty = (value) => { try { return JSON.stringify(typeof value === "string" ? JSON.parse(value) : value, null, 2); } catch { return String(value); } };
+
+function toast(message, kind = "info") {
+  const el = h("div", { class: "toast " + kind }, message);
+  $("toasts").append(el);
+  setTimeout(() => el.remove(), kind === "error" ? 6000 : 3000);
+}
+
+async function api(path, options = {}) {
+  const res = await fetch(path, options);
+  if (!res.ok) {
+    let detail = res.statusText;
+    let reason = null;
+    try {
+      const body = await res.json();
+      detail = Array.isArray(body.detail)
+        ? body.detail.map((e) => `${e.loc.slice(1).join(".")}: ${e.msg}`).join("; ")
+        : body.detail;
+      reason = body.reason || null;
+    } catch { /* not JSON */ }
+    const err = new Error(detail);
+    err.status = res.status;
+    err.reason = reason;
+    throw err;
+  }
+  return res;
+}
+
+const getJson = async (path) => (await api(path)).json();
+
+function friendly(err) {
+  if (err.status === 429) return "The server is busy – try again in a second.";
+  if (err.status === 413) return "That file is too large (limit 8 MB).";
+  if (err.status === 401) return "The API key was not accepted.";
+  if (err.reason === "bad_image") return "That file is not an image Sigil can read.";
+  return err.message || String(err);
+}
+
+async function guarded(button, task) {
+  if (button) button.disabled = true;
+  try { await task(); }
+  catch (err) { toast(friendly(err), "error"); console.error(err); }
+  finally { if (button) button.disabled = false; }
+}
+
+/* ===================================================================================
+ * State
+ * =================================================================================== */
+
+const state = {
+  batches: [],
+  serial: null,
+  unit: null,         // {serial, batch_id, payload, leaf_index}
+  sth: null,          // latest tree head from the server
+  logKey: null,       // the log's public key as bytes
+  device: "web-" + Math.random().toString(36).slice(2, 10),
+};
+
+const VERDICT_TEXT = {
+  GENUINE: "Signed, logged, and the dot pattern behaves like an original print.",
+  COUNTERFEIT: "This label should not be trusted.",
+  SUSPICIOUS: "The checks could not settle this one on their own.",
+  RECAPTURE: "The photo could not be judged. Take another one.",
+};
+const CHECK_NAMES = {
+  quality: "Photo quality", decode: "QR credential", signature: "Signature", key: "Issuer key",
+  log: "Transparency log", cdp: "Copy-detection pattern", clone: "Clone analytics",
+};
+
+/* ===================================================================================
+ * Step 1: batches and labels
+ * =================================================================================== */
+
+async function loadStatus() {
+  const info = await getJson("/healthz");
+  clear($("status")).append(
+    h("span", { class: "pill" }, "log ", h("b", {}, info.log_size), " entries"),
+    h("span", { class: "pill" }, "CDP model ", h("b", {}, "v" + (info.model_version ?? "?"))),
+  );
+}
+
+async function loadBatches(select) {
+  state.batches = await getJson("/v1/batches");
+  const picker = $("batch");
+  clear(picker);
+  for (const b of state.batches) {
+    picker.append(h("option", { value: b.batch_id }, `${b.sku} · ${b.units} units · ${b.print_quality} press · ${b.batch_id}`));
+  }
+  if (!state.batches.length) return;
+  picker.value = select || state.batches[0].batch_id;
+  await showBatch(picker.value);
+}
+
+async function showBatch(batchId) {
+  const batch = await getJson("/v1/batches/" + encodeURIComponent(batchId));
+  const chips = clear($("serials"));
+  for (const serial of batch.serials) {
+    chips.append(h("button", {
+      class: "chip", type: "button", "aria-pressed": "false", data: { serial },
+      onclick: () => guarded(null, () => selectSerial(serial)),
+    }, serial.slice(0, 8)));
+  }
+  state.batchInfo = batch;
+  await selectSerial(batch.serials[0]);
+}
+
+async function selectSerial(serial) {
+  state.serial = serial;
+  for (const chip of $("serials").children) chip.setAttribute("aria-pressed", String(chip.dataset.serial === serial));
+  state.unit = await getJson("/v1/units/" + serial);
+  $("label-img").src = `/v1/labels/${serial}.png`;
+  $("label-view").hidden = false;
+  const qc = state.batchInfo?.qc;
+  clear($("label-facts")).append(
+    h("dt", {}, "Serial"), h("dd", { class: "mono" }, serial),
+    h("dt", {}, "Batch"), h("dd", {}, `${state.unit.batch_id} (${state.batchInfo?.print_quality ?? "?"} press)`),
+    h("dt", {}, "Log entry"), h("dd", {}, "#" + state.unit.leaf_index),
+    h("dt", {}, "QR text"), h("dd", { class: "mono" }, short(state.unit.payload, 30)),
+    h("dt", {}, "Batch QC"), h("dd", {}, qc ? `${qc.n} labels scored, mean ${qc.mean.toFixed(2)}` : "not measured"),
+  );
+  $("shoot").disabled = false;
+  $("incl-verify").disabled = false;
+  clear($("incl"));
+}
+
+async function issueBatch(event) {
+  event.preventDefault();
+  await guarded($("issue-btn"), async () => {
+    const body = {
+      sku: $("issue-sku").value,
+      count: Number($("issue-count").value),
+      print_quality: $("issue-quality").value,
+    };
+    const res = await api("/v1/batches", {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": $("issue-key").value },
+      body: JSON.stringify(body),
+    });
+    const batch = await res.json();
+    toast(`Issued ${batch.serials.length} labels in batch ${batch.batch_id}`);
+    await Promise.all([loadBatches(batch.batch_id), loadStatus(), loadSth()]);
+  });
+}
+
+/* ===================================================================================
+ * Step 2: photograph and scan
+ * =================================================================================== */
+
+function setBusy(busy) {
+  $("shoot").disabled = busy || !state.serial;
+  $("upload-label").classList.toggle("disabled", busy);
+  $("upload").disabled = busy;
+  $("shoot").textContent = busy ? "Scanning…" : "Take photo & scan";
+}
+
+function placeFields() {
+  const value = $("place").value;
+  if (!value) return {};
+  const [lat, lon] = value.split(",");
+  return { lat, lon };
+}
+
+async function scanBlob(blob, { caption }) {
+  const form = new FormData();
+  form.append("image", blob, "photo.jpg");
+  form.append("device_id", state.device);
+  for (const [k, v] of Object.entries(placeFields())) form.append(k, v);
+
+  const url = URL.createObjectURL(blob);
+  $("photo-img").onload = () => URL.revokeObjectURL(url);
+  $("photo-img").src = url;
+  $("photo-caption").textContent = caption;
+  $("photo-fig").hidden = false;
+
+  const result = await (await api("/v1/scans", { method: "POST", body: form })).json();
+  renderResult(result);
+  loadStatus().catch(() => {});
+}
+
+async function shoot() {
+  const attack = document.querySelector('input[name="attack"]:checked').value || null;
+  const difficulty = $("difficulty").value;
+  setBusy(true);
+  try {
+    const res = await api(`/v1/simulate/${state.serial}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ attack, difficulty }),
+    });
+    const blob = await res.blob();
+    const what = attack ? `a ${attack.replace("_", " ")} of the label` : "the genuine label";
+    await scanBlob(blob, { caption: `Simulated photo of ${what}, ${difficulty} conditions.` });
+  } catch (err) {
+    toast(friendly(err), "error");
+    console.error(err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+async function uploaded(event) {
+  const file = event.target.files[0];
+  event.target.value = "";
+  if (!file) return;
+  setBusy(true);
+  try {
+    await scanBlob(file, { caption: `Your photo (${file.name}).` });
+  } catch (err) {
+    toast(friendly(err), "error");
+    console.error(err);
+  } finally {
+    setBusy(false);
+  }
+}
+
+/* ===================================================================================
+ * Step 3: the verdict and the evidence
+ * =================================================================================== */
+
+function verdictTag(verdict) {
+  return h("span", { class: "tag", data: { verdict } }, verdict);
+}
+
+function renderResult(r) {
+  $("result-card").hidden = false;
+  const conf = Math.round(r.confidence * 100);
+  const reasons = r.reasons.length ? h("p", { class: "explain" }, r.reasons.join("; ")) : null;
+
+  const verdict = h("div", { class: "verdict", id: "verdict-box", data: { verdict: r.verdict } },
+    h("div", { class: "word" }, r.verdict),
+    h("p", { class: "explain" }, VERDICT_TEXT[r.verdict] || ""),
+    reasons,
+    h("div", { class: "meta" },
+      h("span", {}, "confidence ", h("b", {}, conf + "%"), h("span", { class: "meter", "aria-hidden": "true" }, h("i", { style: `width:${conf}%` }))),
+      h("span", {}, "rule ", h("code", {}, r.rule)),
+      h("span", {}, `${r.timings_ms.total.toFixed(0)} ms`),
+    ),
+  );
+
+  const facts = h("dl", { class: "facts", style: "margin-top:14px" },
+    h("dt", {}, "Serial"), h("dd", { class: "mono" }, r.serial_hex ?? "– (no credential read)"),
+    h("dt", {}, "Batch"), h("dd", {}, r.batch_id ?? "–"),
+    // The SKU is read off the label, so it is shown as quoted text and flagged as unverified.
+    h("dt", {}, "Label says"), h("dd", {}, r.sku == null ? "–" : h("span", {}, "SKU ", h("code", {}, JSON.stringify(r.sku)), " (unverified text)")),
+  );
+
+  const maxMs = Math.max(...Object.values(r.timings_ms), 1);
+  const timings = h("div", { class: "timings" }, Object.entries(r.timings_ms)
+    .sort((a, b) => (a[0] === "total") - (b[0] === "total") || b[1] - a[1])
+    .map(([name, ms]) => h("div", { class: "timing" },
+      h("span", {}, name),
+      h("span", { class: "bar" }, h("i", { style: `width:${Math.max(2, (ms / maxMs) * 100)}%` })),
+      h("span", { class: "ms" }, ms.toFixed(1) + " ms"))));
+
+  const rows = r.evidence.items.map((ev) => h("tr", {},
+    h("td", {}, CHECK_NAMES[ev.id] || ev.id, h("div", { class: "hash" }, ev.id)),
+    h("td", {}, ev.passed === true ? h("span", { class: "tag pass" }, "pass") : ev.passed === false ? h("span", { class: "tag fail" }, "fail") : h("span", { class: "tag" }, "–")),
+    h("td", {}, ev.summary, h("details", {}, h("summary", {}, "data"), h("pre", {}, JSON.stringify(ev.data, null, 2))))));
+  const evidence = h("div", { class: "scroll" }, h("table", {},
+    h("thead", {}, h("tr", {}, h("th", {}, "Check"), h("th", {}, "Result"), h("th", {}, "Detail"))),
+    h("tbody", {}, rows)));
+
+  clear($("result")).append(verdict, facts,
+    h("h3", { class: "sub" }, "Evidence"), evidence,
+    h("h3", { class: "sub" }, "Timings"), timings);
+  $("result-card").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/* ===================================================================================
+ * The transparency log, audited in this browser
+ * =================================================================================== */
+
+async function loadSth() {
+  const [sth, keys] = await Promise.all([getJson("/v1/log/sth"), getJson("/v1/keys")]);
+  state.sth = sth;
+  state.logKey = b64urlToBytes(keys.find((k) => k.purpose === "log").public_key);
+  clear($("sth")).append(h("dl", { class: "facts" },
+    h("dt", {}, "Size"), h("dd", {}, sth.tree_size + " credentials"),
+    h("dt", {}, "Root"), h("dd", { class: "hash" }, sth.root_hash),
+    h("dt", {}, "Signed"), h("dd", {}, new Date(sth.timestamp_ms).toLocaleString()),
+    h("dt", {}, "Log key"), h("dd", { class: "hash" }, sth.log_kid),
+  ));
+}
+
+function outcome(el, ok, text) {
+  clear(el).append(h("p", { class: "result-line " + (ok ? "ok" : "bad") }, (ok ? "✓ " : "✗ ") + text));
+}
+
+async function verifySignatureClicked() {
+  await loadSth();
+  const ok = await verifySthSignature(state.sth, state.logKey);
+  const el = $("sth-result");
+  if (ok === null) clear(el).append(h("p", { class: "note" }, "This browser has no WebCrypto Ed25519, so the signature check was skipped. The hash checks below still run."));
+  else outcome(el, ok, ok ? "The tree head is signed by the log key." : "The signature does NOT verify.");
+}
+
+async function verifyInclusionClicked() {
+  if (!state.unit) return;
+  const el = clear($("incl"));
+  await loadSth();
+  const { payload, serial } = state.unit;
+  // Everything below uses only the QR text and the signed root; the server's word on the leaf is not needed.
+  const credential = credentialBytes(payload);
+  const leaf = await leafHash(credential);
+  const proof = await getJson(`/v1/log/inclusion?serial=${serial}&tree_size=${state.sth.tree_size}`);
+  const path = proof.path.map(hexToBytes);
+  if ($("tamper").checked && path.length) path[0] = path[0].map((b, i) => (i === 0 ? b ^ 1 : b));
+  const steps = await verifyInclusion(leaf, proof.leaf_index, proof.tree_size, path, hexToBytes(state.sth.root_hash));
+
+  el.append(
+    h("p", { class: "note", style: "margin-top:8px" }, `${credential.length} credential bytes → SHA-256(0x00 ‖ bytes), then ${path.length} sibling hashes up to the root:`),
+    h("ol", { class: "proof" },
+      h("li", {}, h("span", {}, "leaf"), h("span", { class: "hash" }, bytesToHex(leaf))),
+      (steps || path.map((p) => ({ side: "?", sibling: p, result: null }))).map((s, i) =>
+        h("li", {}, h("span", {}, `+ ${i + 1}`), h("span", { class: "hash" }, `${s.side === "left" ? "H(sib ‖ cur)" : s.side === "right" ? "H(cur ‖ sib)" : "sibling"} · ${bytesToHex(s.sibling).slice(0, 16)}…${s.result ? " → " + bytesToHex(s.result).slice(0, 16) + "…" : ""}`))),
+      h("li", {}, h("span", {}, "root"), h("span", { class: "hash" }, state.sth.root_hash))),
+  );
+  el.append(h("p", { class: "result-line " + (steps ? "ok" : "bad") }, steps
+    ? `✓ Verified in your browser: entry #${proof.leaf_index} is in the tree of size ${proof.tree_size} that the log signed.`
+    : "✗ The proof does NOT verify against the signed root."));
+}
+
+const WITNESS_KEY = "sigil.witness.sth";
+
+function remembered() {
+  try { return JSON.parse(localStorage.getItem(WITNESS_KEY)); } catch { return null; }
+}
+function remember(sth) {
+  try { localStorage.setItem(WITNESS_KEY, JSON.stringify(sth)); } catch { /* storage may be blocked */ }
+}
+
+async function verifyConsistencyClicked() {
+  const el = $("cons");
+  await loadSth();
+  const now = state.sth;
+  const before = remembered();
+  if (!before) {
+    remember(now);
+    clear(el).append(h("p", { class: "note" }, `Saved the current head (size ${now.tree_size}) as your baseline. Issue another batch, then check again.`));
+    return;
+  }
+  if (before.tree_size > now.tree_size) {
+    outcome(el, false, `The log shrank from ${before.tree_size} to ${now.tree_size}. That should be impossible for an append-only log.`);
+    return;
+  }
+  const proof = before.tree_size === now.tree_size
+    ? { path: [] }
+    : await getJson(`/v1/log/consistency?first=${before.tree_size}&second=${now.tree_size}`);
+  const ok = await verifyConsistency(before.tree_size, now.tree_size, hexToBytes(before.root_hash), hexToBytes(now.root_hash), proof.path.map(hexToBytes));
+  outcome(el, ok, ok
+    ? (before.tree_size === now.tree_size ? `Unchanged since you last looked (size ${now.tree_size}).` : `Consistent: the log grew from ${before.tree_size} to ${now.tree_size} without rewriting history.`)
+    : "The new tree head does NOT extend the one you saw: history was rewritten.");
+  if (ok) remember(now);
+}
+
+/* ===================================================================================
+ * Wiring
+ * =================================================================================== */
+
+function init() {
+  $("batch").addEventListener("change", (e) => guarded(null, () => showBatch(e.target.value)));
+  $("issue-form").addEventListener("submit", issueBatch);
+  $("shoot").addEventListener("click", shoot);
+  $("upload").addEventListener("change", uploaded);
+  $("sth-refresh").addEventListener("click", (e) => guarded(e.target, async () => { await loadSth(); clear($("sth-result")); }));
+  $("sth-verify").addEventListener("click", (e) => guarded(e.target, verifySignatureClicked));
+  $("incl-verify").addEventListener("click", (e) => guarded(e.target, verifyInclusionClicked));
+  $("cons-verify").addEventListener("click", (e) => guarded(e.target, verifyConsistencyClicked));
+  guarded(null, async () => { await Promise.all([loadStatus(), loadSth()]); await loadBatches(); });
+}
+
+if (typeof document !== "undefined" && document.getElementById("batch")) init();
+</script>
+</body>
+</html>
