@@ -1,0 +1,7 @@
+{
+  "accuracy_min": 0.75,
+  "decided_accuracy_min": 0.85,
+  "false_accept_rate_max": 0.02,
+  "false_reject_rate_max": 0.05,
+  "friction_rate_max": 0.95
+}
