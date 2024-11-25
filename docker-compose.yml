@@ -1,0 +1,12 @@
+services:
+  sigil:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SIGIL_API_KEY: ${SIGIL_API_KEY:-dev-key}
+    volumes:
+      - sigil-data:/data
+
+volumes:
+  sigil-data:
