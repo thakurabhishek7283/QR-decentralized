@@ -1,0 +1,16 @@
+services:
+  sigil:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      SIGIL_API_KEY: ${SIGIL_API_KEY:-dev-key}
+      # "reference" runs the offline investigator; set a Claude model id (e.g. claude-opus-5-5)
+      # and ANTHROPIC_API_KEY to investigate with an LLM.
+      SIGIL_INVESTIGATOR_MODEL: ${SIGIL_INVESTIGATOR_MODEL:-reference}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    volumes:
+      - sigil-data:/data
+
+volumes:
+  sigil-data:
