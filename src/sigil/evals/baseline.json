@@ -1,0 +1,9 @@
+{
+  "accuracy_min": 0.85,
+  "decided_accuracy_min": 0.95,
+  "false_accept_rate_max": 0.02,
+  "false_reject_rate_max": 0.05,
+  "friction_rate_max": 0.75,
+  "agent_resolution_rate_min": 0.2,
+  "policy_violations_max": 0
+}
