@@ -86,7 +86,7 @@ class OverloadedError(SigilError): ...      # inference queue full
 | `data_dir` | `./.sigil` | Keys, DB, traces |
 | `issuer_name` | `"Acme Demo Co"` | Demo issuer |
 | `api_key` | `"dev-key"` | Required on issuer endpoints (`X-API-Key`) |
-| `cdp_genuine_min` | `0.80` | Policy: CDP score at or above this can pass as genuine |
+| `cdp_genuine_min` | `0.966` | Policy: CDP score at or above this can pass as genuine (the model's validated operating point) |
 | `cdp_counterfeit_max` | `0.20` | Policy: CDP score at or below this is a confident copy |
 | `clone_risk_high` | `0.70` | Policy: escalate at or above this |
 | `clone_risk_low` | `0.40` | Policy: `GENUINE` requires clone risk below this |

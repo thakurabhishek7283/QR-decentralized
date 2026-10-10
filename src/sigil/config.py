@@ -15,8 +15,12 @@ class Settings(BaseSettings):
     issuer_name: str = "Acme Demo Co"
     api_key: str = "dev-key"
 
-    # Verification policy thresholds (see LLD §7.2).
-    cdp_genuine_min: float = 0.80
+    # Verification policy thresholds (LLD §7.2). ``cdp_genuine_min`` is the model's validated
+    # operating point (≤ 0.5 % of counterfeits above it; see docs/MODEL_CARD.md). The copy
+    # threshold is deliberately stricter than the validated 0.42: calling a customer's genuine
+    # item counterfeit from a single photo is the costliest error, so the band in between goes
+    # to the investigator, which can ask for a retake.
+    cdp_genuine_min: float = 0.966
     cdp_counterfeit_max: float = 0.20
     clone_risk_high: float = 0.70
     clone_risk_low: float = 0.40

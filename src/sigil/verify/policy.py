@@ -32,7 +32,7 @@ class Verdict(StrEnum):
 
 @dataclass(frozen=True)
 class PolicyConfig:
-    cdp_genuine_min: float = 0.80
+    cdp_genuine_min: float = 0.966
     cdp_counterfeit_max: float = 0.20
     clone_risk_high: float = 0.70
     clone_risk_low: float = 0.40

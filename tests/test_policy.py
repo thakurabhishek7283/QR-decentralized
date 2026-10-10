@@ -16,7 +16,10 @@ from sigil.verify import (
     decide,
 )
 
-CFG = PolicyConfig()  # genuine >= 0.80, counterfeit <= 0.20, clone high 0.70 / low 0.40
+# Explicit thresholds, so the table tests the rules rather than whatever the defaults are.
+CFG = PolicyConfig(
+    cdp_genuine_min=0.80, cdp_counterfeit_max=0.20, clone_risk_high=0.70, clone_risk_low=0.40
+)
 ANY = frozenset({"GENUINE", "COUNTERFEIT", "INCONCLUSIVE"})
 
 

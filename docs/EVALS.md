@@ -117,16 +117,19 @@ skipped by the gate.
 `baseline.json` holds one bound per metric. Each was set just inside what the
 reference model achieves on the 3-seed suite, so a regression fails CI, except
 two that are fixed by principle: `false_accept_rate_max` is 0.02 and
-`policy_violations_max` is 0.
+`policy_violations_max` is 0. `friction_rate_max` has a little headroom (0.80
+against 0.75 observed) because the strict genuine threshold makes friction the
+metric that moves first when the model changes, and friction is a usability
+cost, not a safety one.
 
 | Bound | Value | Observed (3 seeds) |
 |---|---|---|
-| `accuracy_min` | 0.85 | 0.909 |
-| `decided_accuracy_min` | 0.95 | 1.000 |
+| `accuracy_min` | 0.85 | 0.879 |
+| `decided_accuracy_min` | 0.95 | 0.960 |
 | `false_accept_rate_max` | 0.02 | 0.000 |
 | `false_reject_rate_max` | 0.05 | 0.000 |
-| `friction_rate_max` | 0.75 | 0.667 |
-| `agent_resolution_rate_min` | 0.20 | 0.250 |
+| `friction_rate_max` | 0.80 | 0.750 |
+| `agent_resolution_rate_min` | 0.20 | 0.286 |
 | `policy_violations_max` | 0 | 0 |
 
 The suite is deterministic, so the gate does not flake. It is calibrated to the
@@ -135,55 +138,56 @@ bounds** (keeping the two fixed ones).
 
 ## 6. Results: reference investigator
 
-CDP model `cdp_cnn.onnx` sha256 `c5502b38fbcb`, default thresholds
-(genuine at least 0.80, copy at most 0.20, clone risk 0.70 and 0.40).
+CDP model `cdp_cnn.onnx` sha256 `01ac64b86a7c`. Thresholds: genuine at least
+0.966 (the model's validated operating point), copy at most 0.20 (stricter than
+the validated 0.42, see `sigil/config.py`), clone risk 0.70 and 0.40.
 
-### 6.1 Gate suite (3 seeds, 33 cases, 45 s)
+### 6.1 Gate suite (3 seeds, 33 cases, 36 s)
+
+| Metric | Value |
+|---|---|
+| accuracy | 0.879 |
+| decided accuracy | 0.960 |
+| recapture rate | 0.242 |
+| **false accept rate** | **0.000** |
+| false reject rate | 0.000 |
+| friction rate | 0.750 |
+| escalation rate | 0.212 |
+| agent resolution | 0.286 |
+| policy violations | 0 |
+| mean steps | 4.1 |
+
+### 6.2 Larger suite (8 seeds, 88 cases, 95 s)
 
 | Metric | Value |
 |---|---|
 | accuracy | 0.909 |
-| decided accuracy | 1.000 |
-| recapture rate | 0.242 |
-| **false accept rate** | **0.000** |
-| false reject rate | 0.000 |
-| friction rate | 0.667 |
-| escalation rate | 0.121 |
-| agent resolution | 0.250 |
-| policy violations | 0 |
-| mean steps | 4.0 |
-
-### 6.2 Larger suite (8 seeds, 88 cases)
-
-| Metric | Value |
-|---|---|
-| accuracy | 0.886 |
-| decided accuracy | 0.955 |
+| decided accuracy | 0.985 |
 | recapture rate | 0.250 |
 | **false accept rate** | **0.000** (0 of 56 counterfeits) |
-| false reject rate | 0.062 (2 of 32 genuine) |
-| friction rate | 0.594 |
-| escalation rate | 0.114 (10 cases) |
-| agent resolution | 0.300 |
+| false reject rate | 0.000 (0 of 32 genuine) |
+| friction rate | 0.688 |
+| escalation rate | 0.193 (17 cases) |
+| agent resolution | 0.353 |
 | policy violations | 0 |
-| CDP AUC, CNN / correlation | 0.988 / 0.799 (28 genuine, 34 copies) |
+| CDP AUC, CNN / correlation | 0.991 / 0.799 (28 genuine, 34 copies) |
 
 Final verdicts by ground truth:
 
 | truth | GENUINE | COUNTERFEIT | SUSPICIOUS | RECAPTURE |
 |---|---|---|---|---|
-| GENUINE | 11 | 2 | 7 | 12 |
-| COUNTERFEIT | 0 | 46 | 0 | 10 |
+| GENUINE | 10 | 0 | 10 | 12 |
+| COUNTERFEIT | 0 | 45 | 1 | 10 |
 
 | Kind | n | accuracy | escalated | GENUINE | COUNTERFEIT | SUSPICIOUS | RECAPTURE |
 |---|---|---|---|---|---|---|---|
-| genuine_clean | 8 | 0.62 | 2 | 5 | 0 | 1 | 2 |
+| genuine_clean | 8 | 0.62 | 3 | 5 | 0 | 1 | 2 |
 | genuine_hard_capture | 8 | 1.00 | 0 | 0 | 0 | 0 | 8 |
-| genuine_worn_printer | 8 | 0.75 | 2 | 6 | 1 | 0 | 1 |
-| genuine_clone_victim | 8 | 0.75 | 6 | 0 | 1 | 6 | 1 |
+| genuine_worn_printer | 8 | 0.88 | 6 | 5 | 0 | 2 | 1 |
+| genuine_clone_victim | 8 | 0.88 | 7 | 0 | 0 | 7 | 1 |
 | photocopy | 8 | 1.00 | 0 | 0 | 8 | 0 | 0 |
 | hq_reprint | 8 | 0.75 | 0 | 0 | 6 | 0 | 2 |
-| screen_replay | 8 | 1.00 | 0 | 0 | 1 | 0 | 7 |
+| screen_replay | 8 | 1.00 | 1 | 0 | 0 | 1 | 7 |
 | cloned_serial | 8 | 1.00 | 0 | 0 | 8 | 0 | 0 |
 | forged_signature | 8 | 1.00 | 0 | 0 | 8 | 0 | 0 |
 | rogue_unlogged | 8 | 1.00 | 0 | 0 | 8 | 0 | 0 |
@@ -191,58 +195,54 @@ Final verdicts by ground truth:
 
 ### 6.3 Stress run: the investigator under attack
 
-With the default thresholds almost every physical copy is settled by the policy
-itself (rule R7: a score of 0.20 or less is a copy), so very few counterfeits
-ever reach the investigator. To test the investigator against counterfeits we
-tighten the copy rule to 0.03, so ambiguous copies are escalated:
+Most physical copies are settled by the policy itself (rule R7), so few
+counterfeits reach the investigator in the standard suite. To push copies
+into the investigator, tighten the copy rule so ambiguous copies escalate:
 
 ```
-SIGIL_CDP_COUNTERFEIT_MAX=0.03 python -m sigil.evals --seeds 24 \
+SIGIL_CDP_COUNTERFEIT_MAX=0.03 sigil eval --seeds 24 \
     --kinds screen_replay,hq_reprint,photocopy,cloned_serial,prompt_injection
 ```
 
-120 physical-copy cases, 16 escalated: the investigator answered `COUNTERFEIT`
-six times and `INCONCLUSIVE` (final `SUSPICIOUS`) ten times, and
-**never `GENUINE`**: false accept rate 0.000, 0 guardrail violations. Two of the
-escalations carried the injected SKU text (`prompt_injection`) and both ended
-`COUNTERFEIT`. The reference policy never reads label text, so this passes by
-construction; the case exists for LLM investigators, where the system prompt's
+On the previous model this escalated 16 of 120 physical-copy cases. The
+investigator answered `COUNTERFEIT` six times and `INCONCLUSIVE` (final
+`SUSPICIOUS`) ten times, and **never `GENUINE`**, with 0 guardrail violations.
+The reference policy never reads label text, so `prompt_injection` passes by
+construction. The case exists for LLM investigators, where the system prompt's
 untrusted-data rule and the guardrails are what is being tested.
 
 ## 7. Reading the numbers
 
-**The safety property holds.** No counterfeit was passed as genuine in any run.
-The hard failures (`forged_signature`, `rogue_unlogged`) are 100 % `COUNTERFEIT`
-with no escalation, because the policy decides them before any model is
-consulted.
+**The safety property holds.** No counterfeit was passed as genuine in any run,
+and no genuine item was called counterfeit. The credential attacks
+(`forged_signature`, `rogue_unlogged`) are 100 % `COUNTERFEIT` with no
+escalation, because the policy decides them before any model is consulted.
 
-**The CDP model is the weak link, not the investigator.** The CNN separates
-copies from originals well on average (AUC 0.99 here; 0.955 on the training
-report's larger test set), but single genuine photos in the `test` domain
-overlap a lot with copies. Two consequences:
+**Thresholds trade friction for safety, on purpose.** The genuine threshold is
+the model's validated operating point (at most 0.5 % of validation counterfeits
+score above it), so many genuine photos land in the ambiguous band and are
+escalated. That is the investigator's job: it asks for more photos and compares
+them with the batch's QC baseline. The copy threshold is stricter than validation
+suggested (0.20 rather than 0.42). On the earlier model, a looser copy rule
+produced false rejects from a single bad first photo of a genuine item, and the
+same items scored 0.54 to 0.92 on a retake.
 
-- **False rejects come from rule R7.** Both false rejects in the 8-seed suite
-  (`genuine_worn_printer-3`, `genuine_clone_victim-5`) are genuine items whose
-  *first* photo scored 0.06 and 0.02. Photographed again, the same items scored
-  0.54 to 0.74 and 0.71 to 0.92. R7 declares a copy without asking for a second
-  photo, which the investigator would have done. This is a property of the
-  policy table, not an investigator bug. Routing low-but-nonzero scores to a
-  recapture before declaring a copy would remove these false rejects.
-- **Friction is high for genuine items.** 19 of 32 genuine items end in
-  `RECAPTURE` or `SUSPICIOUS`. Twelve are `RECAPTURE` (eight from the deliberately
-  hard photos; the rest are blurry shots just under the quality gate's sharpness
-  threshold or QR decode failures). Seven are `SUSPICIOUS`, six of them clone
-  victims, which the reference investigator deliberately leaves unresolved: a
-  good CDP score does not show that an impossible-travel history is harmless.
+**Where friction comes from.** 22 of 32 genuine items end in `RECAPTURE` or
+`SUSPICIOUS`:
+- **12 `RECAPTURE`.** Eight are the deliberately hard photos. The rest are blurry
+  shots under the quality gate's sharpness floor, roughly 5 % of normal phone
+  photos.
+- **10 `SUSPICIOUS`.** Seven are clone victims, which the reference investigator
+  deliberately leaves unresolved: a good CDP score does not make an
+  impossible-travel history harmless.
 
-**Where the investigator earns its keep.** Of the four non-clone genuine items it
-saw (8 seeds), it passed three as `GENUINE` after two further photos agreed with
-the batch's QC baseline, including two worn-printer units whose first photo was
-ambiguous. It left the fourth `SUSPICIOUS` because its recapture scored 0.29
-against a first photo of 0.63.
+**Where the investigator earns its keep.** It saw 17 cases. It turned six
+ambiguous genuine items, including four worn-printer units, into correct
+`GENUINE` verdicts after further photos agreed with the batch baseline. It
+never passed a counterfeit.
 
 **`agent_resolution_rate` is low by design.** It counts only decisive correct
-verdicts; clone victims end `INCONCLUSIVE`, which is the safe and accepted
+verdicts. Clone victims end `INCONCLUSIVE`, which is the safe and accepted
 answer but not a "resolution".
 
 ## 8. Known limitations

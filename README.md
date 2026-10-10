@@ -171,19 +171,54 @@ Numbers come from the commands shown, on the simulated channel (see [Limitations
 **Scenario evals, reference investigator** (`sigil eval --model reference --seeds 3 --gate`)
 
 <!-- RESULTS:EVAL:BEGIN -->
-_Run `make eval` and paste the headline table from `reports/eval/report.md` here._
+| Metric | 3 seeds (CI gate, 33 cases) | 8 seeds (88 cases) |
+|---|---:|---:|
+| **False accept rate** (counterfeit passed as genuine) | **0.000** | **0.000** (0 / 56) |
+| False reject rate (genuine called counterfeit) | 0.000 | 0.000 (0 / 32) |
+| Accuracy (final verdict acceptable) | 0.879 | 0.909 |
+| Accuracy excluding `RECAPTURE` | 0.960 | 0.985 |
+| Escalated to the investigator | 21 % | 19 % |
+| Guardrail / policy violations | 0 | 0 |
+
+Forged and unlogged credentials are rejected by the policy 100 % of the time, before any model runs.
+Most friction is by design: deliberately hard photos ask for a retake, and genuine items whose serial was
+cloned elsewhere stay `SUSPICIOUS`. Per-kind results and the reasoning are in [docs/EVALS.md](docs/EVALS.md).
 <!-- RESULTS:EVAL:END -->
 
 **Inference serving** (`sigil bench --concurrency 1,8,32 --duration 5`)
 
 <!-- RESULTS:BENCH:BEGIN -->
-_Run `make bench` and paste the table here._
+| concurrency | mode | req/s | speed-up | p50 ms | p95 ms | mean batch |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | unbatched | 284 | 1.00× | 3.2 | 4.9 | 1.0 |
+| 1 | batched | 308 | 1.08× | 3.0 | 4.4 | 1.0 |
+| 8 | unbatched | 314 | 1.00× | 24.9 | 30.6 | 1.0 |
+| 8 | batched | 384 | 1.22× | 20.2 | 26.4 | 8.0 |
+| 32 | unbatched | 298 | 1.00× | 104.4 | 141.4 | 1.0 |
+| 32 | batched | 399 | 1.34× | 77.8 | 102.0 | 32.0 |
+
+The model alone batches well: ONNX Runtime goes from 0.77 ms per patch at batch 1 to 0.32 ms at batch 32
+(2.4× throughput). End to end the gain is capped by Amdahl's law, because about 2.5 ms of per-request
+pre-processing (alignment-dependent correlation and input building) runs on the event loop. Moving
+that into the batch worker is the next optimisation. Profiling also found and fixed ONNX Runtime
+thread spin-waiting that starved the event loop, which cut unbatched p50 latency from 5.5 ms to 2.2 ms. Details:
+[model card](docs/MODEL_CARD.md#serving-performance). This was a 4-vCPU container, single process.
 <!-- RESULTS:BENCH:END -->
 
 **CDP model, held-out channel** (details and failure analysis in the [model card](docs/MODEL_CARD.md))
 
 <!-- RESULTS:MODEL:BEGIN -->
-_Paste the AUC and EER summary from `docs/MODEL_CARD.md` here._
+| | CNN (61k params) | Classical correlation |
+|---|---:|---:|
+| AUC, all attacks | **0.983** | 0.843 |
+| AUC, photocopy | 0.9998 | 0.903 |
+| AUC, high-quality reprint | 0.9998 | 0.803 |
+| AUC, screen replay | 0.945 | 0.827 |
+| Equal error rate | 7.5 % | — |
+
+Measured on 3,251 decoded test captures drawn from parameter ranges the model never trained on. The
+operating points were chosen on validation (genuine ≥ 0.966 keeps at most 0.5 % of counterfeits above it). Screen
+replay is the weakest attack, so its ambiguous cases are escalated rather than decided.
 <!-- RESULTS:MODEL:END -->
 
 ## Engineering highlights
