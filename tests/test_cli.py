@@ -11,8 +11,9 @@ from pathlib import Path
 
 import httpx
 import pytest
-from typer.testing import CliRunner
+from typer.testing import CliRunner, Result
 
+from sigil import cli
 from sigil.api.container import Container
 from sigil.api.schemas import SimulateRequest
 from sigil.cli import app
@@ -26,6 +27,17 @@ from tests.harness.helpers import FakeModel, call, make_registry, reply
 
 runner = CliRunner()
 REAL_CLIENT = httpx.Client
+
+
+@pytest.fixture(autouse=True)
+def fixed_width(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Rich sizes its console from the terminal at import; pin it so output doesn't vary."""
+    monkeypatch.setattr(cli.console, "width", 120)
+
+
+def text(result: Result) -> str:
+    """Command output with rich's terminal wrapping undone, so asserts don't depend on width."""
+    return " ".join(result.output.split())
 
 
 def trace_file(path: Path) -> Path:
@@ -60,7 +72,7 @@ def test_a_tampered_trace_fails_verification(tmp_path: Path) -> None:
     path.write_text(path.read_text().replace('"value":3', '"value":4', 1))
     result = runner.invoke(app, ["trace", "verify", str(path)])
     assert result.exit_code == 1
-    assert "FAILED" in result.output
+    assert "FAILED" in text(result)
 
 
 def test_a_file_that_is_not_a_trace_fails_cleanly(tmp_path: Path) -> None:
@@ -68,7 +80,7 @@ def test_a_file_that_is_not_a_trace_fails_cleanly(tmp_path: Path) -> None:
     path.write_text("not json\n")
     result = runner.invoke(app, ["trace", "verify", str(path)])
     assert result.exit_code == 1
-    assert "not a valid trace" in result.output
+    assert "not a valid trace" in text(result)
 
 
 def test_replay_refuses_a_trace_whose_chain_is_broken(tmp_path: Path) -> None:
@@ -76,7 +88,7 @@ def test_replay_refuses_a_trace_whose_chain_is_broken(tmp_path: Path) -> None:
     path.write_text(trace_file(tmp_path / "t.jsonl").read_text().replace("scan abc123", "nothing"))
     result = runner.invoke(app, ["trace", "replay", str(path), "--data-dir", str(tmp_path / "d")])
     assert result.exit_code == 1
-    assert "chain is broken" in result.output
+    assert "chain is broken" in text(result)
 
 
 def test_issue_simulate_and_scan_round_trip(tmp_path: Path) -> None:
@@ -109,7 +121,7 @@ def test_simulating_an_unknown_serial_is_a_clean_error(tmp_path: Path) -> None:
         app, ["simulate", "0" * 24, "-o", str(tmp_path / "x.jpg"), "--data-dir", str(tmp_path)]
     )
     assert result.exit_code == 2
-    assert "never issued" in result.output
+    assert "never issued" in text(result)
 
 
 def test_bad_simulation_options_are_rejected(tmp_path: Path) -> None:
@@ -187,7 +199,7 @@ def audit(
         lambda **kw: REAL_CLIENT(**kw, transport=httpx.MockTransport(handler)),
     )
     result = runner.invoke(app, ["audit", "--url", "http://log.test", "--state", str(state)])
-    return result.exit_code, " ".join(result.output.split())  # undo terminal wrapping
+    return result.exit_code, text(result)
 
 
 def test_a_witness_follows_a_growing_log_and_catches_a_rewrite(
@@ -253,4 +265,4 @@ def test_an_investigation_from_the_api_replays_identically(tmp_path: Path) -> No
     trace = asyncio.run(investigate_a_clone())
     result = runner.invoke(app, ["trace", "replay", str(trace), "--data-dir", str(tmp_path)])
     assert result.exit_code == 0, result.output
-    assert "replay identical" in result.output
+    assert "replay identical" in text(result)
