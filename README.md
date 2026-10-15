@@ -1,11 +1,16 @@
 # Sigil
 
-**Counterfeit detection you can audit.** Every product label carries a signed QR credential, a secret
-copy-detection pattern that computer vision can check, and an entry in a public transparency log.
-A fixed, ordered policy turns the evidence into a verdict, and a scenario eval suite measures it and
-gates CI.
+**Counterfeit detection you can audit.**
 
-It runs on a laptop with no API keys and no external services.
+Sigil checks whether a product label is real by combining three independent kinds of evidence, then
+applying a fixed, ordered set of rules to reach a verdict. It runs on a laptop with no API keys and no
+external services.
+
+| Evidence | What it proves | What it defeats |
+|---|---|---|
+| **Signed QR credential** | The label was issued by the brand (Ed25519 signature). | Made-up serial numbers and forged labels. |
+| **Secret copy-detection pattern (CDP)** | This physical print is the original, not a copy of it. | Photocopies, reprints and screen replays of a real label. |
+| **Public transparency log** | The brand cannot quietly add, remove or rewrite issued labels. | A dishonest operator or an insider minting labels off the books. |
 
 ```bash
 uv sync
@@ -13,9 +18,15 @@ uv run sigil demo        # a narrated end-to-end run in your terminal, about 6 s
 uv run sigil serve       # then open http://localhost:8000
 ```
 
-## Why
+## Contents
 
-Counterfeit goods are roughly 2.5 % of world trade (OECD/EUIPO). The usual answer is a serialised QR
+[The problem](#the-problem) · [How it works](#how-it-works) · [Verdicts](#verdicts) · [Key terms](#key-terms) ·
+[Quickstart](#quickstart) · [Results](#results) · [What's inside](#whats-inside) ·
+[Design choices](#design-choices) · [Limitations](#limitations) · [Layout and docs](#repository-layout)
+
+## The problem
+
+Counterfeit goods are roughly 2.5 % of world trade (OECD/EUIPO). The usual defence is a serialised QR
 code that a server declares "genuine". That fails in four ways:
 
 | Failure | Why |
@@ -25,15 +36,17 @@ code that a server declares "genuine". That fails in four ways:
 | **Trust in the operator** | The verifier is a server the brand runs. Nobody can audit what it signed or when. |
 | **Binary answers** | Real photos are blurry and glare-ridden. A system that can only say yes or no is either insecure or annoying. |
 
-This repository replaced a 2022 prototype that made all of these mistakes
-(`FakeProductDetector.sol`, a Next.js + Solidity 0.4 app, still in the git history). It looked product IDs
-up on a public chain, so a photocopied label passed; it paid gas per product; and its
-`transferOwnership(index, _currentOwner, _newOwner)` never compared the caller with `_currentOwner`, so
-anyone could move anyone's product to any registered user. Sigil keeps the goal (provable provenance)
-and replaces the mechanism: a binding between the digital identity and the physical print, and a
-transparency log instead of a blockchain.
+Sigil replaced a 2022 prototype (`FakeProductDetector.sol`, a Next.js + Solidity 0.4 app, still in the git
+history) that made all of these mistakes. It looked product IDs up on a public chain, so a photocopied
+label passed. It paid gas per product. Its `transferOwnership(index, _currentOwner, _newOwner)` never
+compared the caller with `_currentOwner`, so anyone could move anyone's product to any registered user.
+
+Sigil keeps the goal, provable provenance, and replaces the mechanism: a binding between the digital
+identity and the physical print, and a transparency log instead of a blockchain.
 
 ## How it works
+
+Sigil has two sides: the brand **issues** labels, and anyone can **verify** a photo of one.
 
 ```mermaid
 flowchart LR
@@ -55,44 +68,49 @@ flowchart LR
     L -. STH + proofs .-> W[Any auditor or browser]
 ```
 
-1. **Issue.** A batch is signed, appended to the log (the tree head is re-signed), and rendered as labels:
-   the QR beside a pattern generated from `HMAC(cdp_key, serial)`. A simulated line camera samples
-   the batch to record its print-quality baseline.
-2. **Scan.** The photo is decoded and rectified, then checked in parallel: signature, key status, log
-   inclusion, the CDP score (a two-input CNN against the expected template, plus a classical
-   correlation baseline) and clone analytics. Each fact becomes an evidence item with a stable id.
-3. **Decide.** A fixed rule table maps the evidence to a verdict. The first matching rule wins, and the
-   order is the precedence: a failed signature or a missing log entry is `COUNTERFEIT` whatever the
-   pattern score says, and anything the evidence does not settle is `SUSPICIOUS`, never `GENUINE`.
+**1. Issue.** For each batch of products Sigil:
+- signs a credential for every serial number and puts it in the label's QR code;
+- appends the credentials to the transparency log and re-signs the log's tree head;
+- generates a unique pattern for each serial from `HMAC(cdp_key, serial)` and prints it beside the QR;
+- samples the batch with a simulated line camera to record its print-quality baseline.
 
-## What's inside
+**2. Scan.** A photo is decoded and straightened, then checked in parallel:
+- the credential's signature and the issuing key's status (active or revoked, and whether the credential
+  was issued before the revocation);
+- the credential's inclusion in the transparency log;
+- the copy-detection pattern: a small neural network compares it to the expected template, next to a
+  classical correlation baseline;
+- clone analytics: has this serial been scanned in places or numbers that make no sense?
 
-**Trust core** &ndash; [`crypto`](src/sigil/crypto), [`ledger`](src/sigil/ledger), [`scans`](src/sigil/scans)
-- Canonical binary credentials (Ed25519, base45 in QR alphanumeric mode, version 9-M), key ids and revocation.
-- An RFC 9162 Merkle log in SQLite: signed tree heads, inclusion and consistency proofs, property-tested
-  against the RFC vectors, plus an independent `Auditor` that detects a rewritten history.
-- Clone analytics: impossible travel, geographic dispersion, scan volume and device diversity.
+Each result becomes an **evidence item** with a stable id.
 
-**Vision and inference** &ndash; [`vision`](src/sigil/vision), [`cdp`](src/sigil/cdp), [`inference`](src/sigil/inference)
-- QR detection, homography rectification, ECC sub-pixel alignment and a quality gate that returns
-  `RECAPTURE` instead of guessing. The same `extract_cdp_patch` and `make_input` run in training, serving
-  and evals, so train/serve skew cannot creep in.
-- A 61k-parameter CNN served by ONNX Runtime behind an asyncio **dynamic micro-batcher** with a bounded
-  queue, per-request timeouts, Prometheus metrics and a benchmark harness. See the [model card](docs/MODEL_CARD.md).
-- A parameterised print/scan channel and three attacks (photocopy, high-quality reprint, screen replay),
-  with *disjoint* train and test parameter ranges to measure generalisation.
+**3. Decide.** A fixed rule table turns the evidence into a verdict. The first matching rule wins, so
+the order is the precedence:
+- a failed signature or a missing log entry is `COUNTERFEIT` whatever the pattern score says;
+- `GENUINE` needs positive evidence from the signature, the log, the pattern and the clone analytics;
+- anything the evidence does not settle is `SUSPICIOUS`, never `GENUINE`.
 
-**Verification** &ndash; [`verify`](src/sigil/verify)
-- Every check becomes an evidence item with a stable id. Numbers and enums only: the few strings an
-  attacker controls (a label's SKU and batch text) live under an `untrusted` field.
-- An ordered rule table (`R1_capture` through `R11_ambiguous`) decides. `GENUINE` needs affirmative
-  evidence from the signature, the log, the pattern and the clone analytics.
+## Verdicts
 
-**Evals** &ndash; [`evals`](src/sigil/evals)
-- Ten scenario kinds from clean genuine labels to forged signatures and unlogged insider mints, each
-  with a ground truth and a set of acceptable verdicts. Every case runs in its own deterministic world.
-- Metrics include false-accept rate (the safety metric), false-reject rate, friction, recapture rate,
-  CDP AUC and latency. `sigil eval --gate` fails CI on a regression.
+| Verdict | Meaning | What the user should do |
+|---|---|---|
+| `GENUINE` | Signature, log entry, pattern and scan history all check out. | Trust the item. |
+| `COUNTERFEIT` | A hard check failed (no valid credential in the QR, bad signature, issued after its key was revoked, or no log entry), or the pattern scores as a copy. | Do not trust the item. |
+| `SUSPICIOUS` | The evidence does not settle it: an ambiguous pattern score, a serial that looks cloned, or a credential that predates its key's later revocation. | Treat with caution and investigate. |
+| `RECAPTURE` | The photo is too poor to judge (blur, glare, QR not found). The response says why. | Take another photo. |
+
+## Key terms
+
+| Term | Plain meaning |
+|---|---|
+| **Credential** | The signed record in the QR code: serial number, SKU, batch and the issuer's signature. |
+| **CDP (copy-detection pattern)** | A dense, noise-like print pattern that degrades measurably each time it is printed or scanned. A copy is statistically different from the original, so a model can tell them apart. The pattern is generated from a secret key, so it cannot be forged without that key. |
+| **Transparency log** | An append-only public record of everything issued, built as a Merkle tree (RFC 9162). Anyone can verify that an entry is in it and that it has only grown, never been rewritten. |
+| **STH (signed tree head)** | The log's signed summary at a point in time. |
+| **Inclusion proof** | A short proof that one credential is in the log. |
+| **Consistency proof** | A short proof that a newer log extends an older one without changing history. |
+| **Rectification** | Straightening a skewed photo so the label can be read as if flat on. |
+| **Micro-batching** | Grouping concurrent requests into one model call for throughput. |
 
 ## Quickstart
 
@@ -103,11 +121,16 @@ uv run sigil serve               # API + web demo on http://localhost:8000 (/doc
 docker compose up                # the same, in a container with a data volume
 ```
 
-The first start issues two demo batches. In the web demo you pick a label, "photograph" it as the genuine
-item or as a photocopy, reprint or screen replay, and scan it. The verdict card shows the evidence table and
-timings. A side panel verifies the transparency log
-**in your browser** with WebCrypto: the tree head signature, a Merkle inclusion proof recomputed from the
-QR text, and a consistency proof against the last head your browser saw. You do not have to trust the server.
+### Web demo
+
+The first start issues two demo batches. Pick a label, "photograph" it as the genuine item or as a
+photocopy, reprint or screen replay, and scan it. The verdict card shows the evidence table and timings.
+
+A side panel verifies the transparency log **in your browser** with WebCrypto: the tree head signature,
+a Merkle inclusion proof recomputed from the QR text, and a consistency proof against the last head your
+browser saw. You do not have to trust the server.
+
+### Command line
 
 | Command | What it does |
 |---|---|
@@ -122,7 +145,7 @@ QR text, and a consistency proof against the last head your browser saw. You do 
 
 ### API
 
-| Endpoint | |
+| Endpoint | Purpose |
 |---|---|
 | `POST /v1/batches` | Issue a batch (needs `X-API-Key`; `SIGIL_API_KEY`, default `dev-key`) |
 | `POST /v1/scans` | Multipart photo upload (8 MB cap); returns the verdict and the evidence |
@@ -133,6 +156,8 @@ QR text, and a consistency proof against the last head your browser saw. You do 
 
 `POST /v1/simulate/{serial}` and `GET /v1/labels/{serial}.png` exist for the demo only. A real deployment
 never serves a label's CDP.
+
+Development: `make lint typecheck test eval`.
 
 ## Results
 
@@ -192,7 +217,36 @@ operating points were chosen on validation (genuine ≥ 0.966 keeps at most 0.5 
 replay is the weakest attack, so its ambiguous cases are reported as suspicious or sent back for a retake.
 <!-- RESULTS:MODEL:END -->
 
-## Engineering highlights
+## What's inside
+
+**Trust core** &ndash; [`crypto`](src/sigil/crypto), [`ledger`](src/sigil/ledger), [`scans`](src/sigil/scans)
+- Canonical binary credentials (Ed25519, base45 in QR alphanumeric mode, version 9-M), key ids and revocation.
+- An RFC 9162 Merkle log in SQLite: signed tree heads, inclusion and consistency proofs, property-tested
+  against the RFC vectors, plus an independent `Auditor` that detects a rewritten history.
+- Clone analytics: impossible travel, geographic dispersion, scan volume and device diversity.
+
+**Vision and inference** &ndash; [`vision`](src/sigil/vision), [`cdp`](src/sigil/cdp), [`inference`](src/sigil/inference)
+- QR detection, homography rectification, ECC sub-pixel alignment and a quality gate that returns
+  `RECAPTURE` instead of guessing. The same `extract_cdp_patch` and `make_input` run in training, serving
+  and evals, so train/serve skew cannot creep in.
+- A 61k-parameter CNN served by ONNX Runtime behind an asyncio **dynamic micro-batcher** with a bounded
+  queue, per-request timeouts, Prometheus metrics and a benchmark harness. See the [model card](docs/MODEL_CARD.md).
+- A parameterised print/scan channel and three attacks (photocopy, high-quality reprint, screen replay),
+  with *disjoint* train and test parameter ranges to measure generalisation.
+
+**Verification** &ndash; [`verify`](src/sigil/verify)
+- Every check becomes an evidence item with a stable id. Numbers and enums only: the few strings an
+  attacker controls (a label's SKU and batch text) live under an `untrusted` field.
+- An ordered rule table (`R1_capture` through `R11_ambiguous`) decides. `GENUINE` needs affirmative
+  evidence from the signature, the log, the pattern and the clone analytics.
+
+**Evals** &ndash; [`evals`](src/sigil/evals)
+- Ten scenario kinds from clean genuine labels to forged signatures and unlogged insider mints, each
+  with a ground truth and a set of acceptable verdicts. Every case runs in its own deterministic world.
+- Metrics include false-accept rate (the safety metric), false-reject rate, friction, recapture rate,
+  CDP AUC and latency. `sigil eval --gate` fails CI on a regression.
+
+## Design choices
 
 - **Train/serve parity.** One alignment function and one input builder serve training, the API and the evals.
   The eval channel uses parameter ranges the model never trained on.
@@ -209,8 +263,8 @@ replay is the weakest attack, so its ambiguous cases are reported as suspicious 
 
 - **The print/scan channel is simulated.** The CDP model is trained and evaluated against a parameterised
   physical model of printers, copiers, screens and phone cameras, not real hardware. Train and test
-  ranges are deliberately disjoint, but no number here predicts field performance. A real deployment would
-  recalibrate on captures from the target printers and phones; the batch QC step is the hook for that.
+  ranges are deliberately disjoint, but no number here predicts field performance. A real deployment
+  would recalibrate on captures from the target printers and phones; the batch QC step is the hook for that.
 - **The demo serves labels, including their CDP, so a browser can "photograph" them.** In production only
   the printer ever sees the template.
 - **Dev key management.** Keys live in files under the data directory. The `FileKeyStore` is the seam for a KMS/HSM.
@@ -239,8 +293,6 @@ tests/                            unit, property, async and end-to-end API tests
 - [High-level design](docs/HLD.md): problem, goals, architecture, threat model
 - [Low-level design](docs/LLD.md): module contracts, formats, algorithms, test plan
 - [Model card](docs/MODEL_CARD.md): the CDP CNN, its data, results and limits
-
-Development: `make lint typecheck test eval`.
 
 ## License
 
